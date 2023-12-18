@@ -1,113 +1,89 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as url from "node:url";
+import { existsSync } from "fs";
+import { createServer } from "http";
+import { join } from "path";
 
 import { createRequestHandler } from "@remix-run/express";
-import { broadcastDevReady, installGlobals } from "@remix-run/node";
 import compression from "compression";
 import express from "express";
 import morgan from "morgan";
-import sourceMapSupport from "source-map-support";
+import { Server } from "socket.io";
 
-sourceMapSupport.install({
-  retrieveSourceMap: function (source) {
-    // get source file without the `file://` prefix or `?t=...` suffix
-    const match = source.match(/^file:\/\/(.*)\?t=[.\d]+$/);
-    if (match) {
-      return {
-        url: source,
-        map: fs.readFileSync(`${match[1]}.map`, "utf8"),
-      };
-    }
-    return null;
-  },
-});
-installGlobals();
+const MODE = process.env.NODE_ENV;
+const BUILD_DIR = join(process.cwd(), "server/build");
 
-/** @typedef {import('@remix-run/node').ServerBuild} ServerBuild */
+if (!existsSync(BUILD_DIR)) {
+  console.warn(
+    "Build directory doesn't exist, please run `npm run dev` or `npm run build` before starting the server.",
+  );
+}
 
-const BUILD_PATH = path.resolve("build/index.js");
-const VERSION_PATH = path.resolve("build/version.txt");
+const BUILD_PATH = "./build/index.js";
 
-const initialBuild = await reimportServer();
-const remixHandler =
-  process.env.NODE_ENV === "development"
-    ? await createDevRequestHandler(initialBuild)
-    : createRequestHandler({
-        build: initialBuild,
-        mode: initialBuild.mode,
-      });
+/**
+ * Initial build
+ * @type {ServerBuild}
+ */
+const build = await import(BUILD_PATH);
 
 const app = express();
 
-app.use(compression());
+// You need to create the HTTP server from the Express app
+const httpServer = createServer(app);
 
-// http://expressjs.com/en/advanced/best-practice-security.html#at-a-minimum-disable-x-powered-by-header
-app.disable("x-powered-by");
+// And then attach the socket.io server to the HTTP server
+const io = new Server(httpServer);
 
-// Remix fingerprints its assets so we can cache forever.
-app.use(
-  "/build",
-  express.static("public/build", { immutable: true, maxAge: "1y" })
-);
+// Then you can use `io` to listen the `connection` event and get a socket
+// from a client
+io.on("connection", (socket) => {
+  // from this point you are on the WS connection with a specific client
+  console.log(socket.id, "connected");
 
-// Everything else (like favicon.ico) is cached for an hour. You may want to be
-// more aggressive with this caching.
-app.use(express.static("public", { maxAge: "1h" }));
+  socket.emit("confirmation", "connected!");
 
-app.use(morgan("tiny"));
-
-app.all("*", remixHandler);
-
-const port = process.env.PORT || 3000;
-app.listen(port, async () => {
-  console.log(`Express server listening on port ${port}`);
-
-  if (process.env.NODE_ENV === "development") {
-    broadcastDevReady(initialBuild);
-  }
+  socket.on("event", (data) => {
+    console.log(socket.id, data);
+    socket.emit("event", "pong");
+  });
 });
 
-/**
- * @returns {Promise<ServerBuild>}
- */
-async function reimportServer() {
-  const stat = fs.statSync(BUILD_PATH);
+app.use(compression());
 
-  // convert build path to URL for Windows compatibility with dynamic `import`
-  const BUILD_URL = url.pathToFileURL(BUILD_PATH).href;
+// You may want to be more aggressive with this caching
+app.use(express.static("public", { maxAge: "1h" }));
 
-  // use a timestamp query parameter to bust the import cache
-  return import(BUILD_URL + "?t=" + stat.mtimeMs);
-}
+// Remix fingerprints its assets so we can cache forever
+app.use(express.static("public/build", { immutable: true, maxAge: "1y" }));
 
-/**
- * @param {ServerBuild} initialBuild
- * @returns {Promise<import('@remix-run/express').RequestHandler>}
- */
-async function createDevRequestHandler(initialBuild) {
-  let build = initialBuild;
-  async function handleServerUpdate() {
-    // 1. re-import the server build
-    build = await reimportServer();
-    // 2. tell Remix that this app server is now up-to-date and ready
-    broadcastDevReady(build);
-  }
-  const chokidar = await import("chokidar");
-  chokidar
-    .watch(VERSION_PATH, { ignoreInitial: true })
-    .on("add", handleServerUpdate)
-    .on("change", handleServerUpdate);
+app.use(morgan("tiny"));
+app.all(
+  "*",
+  MODE === "production"
+    ? createRequestHandler({ build })
+    : (req, res, next) => {
+        //purgeRequireCache();
+        //const build = require("./build");
+        return createRequestHandler({ build, mode: MODE })(req, res, next);
+      },
+);
 
-  // wrap request handler to make sure its recreated with the latest build for every request
-  return async (req, res, next) => {
-    try {
-      return createRequestHandler({
-        build,
-        mode: "development",
-      })(req, res, next);
-    } catch (error) {
-      next(error);
-    }
-  };
-}
+const port = process.env.PORT || 3000;
+
+// instead of running listen on the Express app, do it on the HTTP server
+httpServer.listen(port, () => {
+  console.log(`Express server listening on port ${port}`);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// function purgeRequireCache() {
+//   // purge require cache on requests for "server side HMR" this won't let
+//   // you have in-memory objects between requests in development,
+//   // alternatively you can set up nodemon/pm2-dev to restart the server on
+//   // file changes, we prefer the DX of this though, so we've included it
+//   // for you by default
+//   for (const key in require.cache) {
+//     if (key.startsWith(BUILD_DIR)) {
+//       delete require.cache[key];
+//     }
+//   }
+// }
