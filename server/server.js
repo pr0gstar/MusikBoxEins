@@ -74,7 +74,6 @@ setInterval(function () {
     return;
   }
   console.log("Card detected, CardType: " + response.bitSize);
-
   //# Get the UID of the card
   response = mfrc522.getUid();
   if (!response.status) {

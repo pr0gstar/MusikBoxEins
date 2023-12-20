@@ -24,36 +24,18 @@ export default function Index() {
   }, [socket]);
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", lineHeight: "1.8" }}>
-      <h1>Welcome to Remix</h1>
-      <ul>
-        <li>
-          <a
-            target="_blank"
-            href="https://remix.run/tutorials/blog"
-            rel="noreferrer"
-          >
-            15m Quickstart Blog Tutorial
-          </a>
-        </li>
-        <li>
-          <a
-            target="_blank"
-            href="https://remix.run/tutorials/jokes"
-            rel="noreferrer"
-          >
-            Deep Dive Jokes App Tutorial
-          </a>
-        </li>
-        <li>
-          <a target="_blank" href="https://remix.run/docs" rel="noreferrer">
-            Remix Docs
-          </a>
-        </li>
-      </ul>
-      <button type="button" onClick={() => socket?.emit("event", "ping")}>
-        Send ping
-      </button>
+    <div
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        lineHeight: "1.8",
+        textAlign: "center",
+      }}
+    >
+      <h1>Willkommen auf dem Webinterface der MusikBoxEins 💃🏻📻</h1>
+      <p>
+        Hier entsteht irgendwann das Webinterface aber bisher wird es nur für
+        die Entwicklung genutzt!
+      </p>
     </div>
   );
 }
