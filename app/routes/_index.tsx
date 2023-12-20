@@ -36,6 +36,9 @@ export default function Index() {
         Hier entsteht irgendwann das Webinterface aber bisher wird es nur für
         die Entwicklung genutzt!
       </p>
+      <button type="button" onClick={() => socket?.emit("event", "ping")}>
+        Send ping
+      </button>
     </div>
   );
 }
